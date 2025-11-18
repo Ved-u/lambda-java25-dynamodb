@@ -1,6 +1,7 @@
 import streamlit as st
 import os
 import sys
+import json
 # Add project root BEFORE importing RAG
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(ROOT_DIR)
@@ -8,6 +9,7 @@ sys.path.append(ROOT_DIR)
 from RAG import query_data
 from RAG import populate_database
 import Send_Email
+from MCP.aws_mcp_server import AWSMCPServer
 
 # Global Variable for path to data folder for storing PDFs
 PATH = r"C:\Users\vedan\OneDrive\Desktop\Hackathon\lambda-java25-dynamodb\UI\data"
@@ -22,6 +24,12 @@ if "user_email" not in st.session_state:
 if "email_set" not in st.session_state:
     st.session_state.email_set = False
 
+if "aws_mode" not in st.session_state:
+    st.session_state.aws_mode = False
+
+if "mcp_server" not in st.session_state:
+    st.session_state.mcp_server = AWSMCPServer()
+
 def handle_message(message: str):
     if not message.strip():
         return
@@ -29,9 +37,19 @@ def handle_message(message: str):
     # For Keeping Chat History 
     st.session_state.chat_history.append(("user", message))
 
-    # Generate Response through RAG & LLM
-    with st.spinner("Generating response..."):
-        bot_reply = query_data.query_rag(message)  # This might take time
+    # Check if AWS mode is enabled
+    if st.session_state.aws_mode:
+        # Use MCP server for AWS operations
+        with st.spinner("Processing AWS operation..."):
+            result = st.session_state.mcp_server.process_natural_language(message)
+            if result["success"]:
+                bot_reply = f"**AWS Operation Completed:**\n\n**Service:** {result['operation'].get('service', 'N/A')}\n**Operation:** {result['operation'].get('operation', 'N/A')}\n**Description:** {result['operation'].get('description', 'N/A')}\n\n**Result:**\n```json\n{json.dumps(result['result'], indent=2)}\n```"
+            else:
+                bot_reply = f"**AWS Operation Failed:**\n{result.get('message', 'Unknown error')}"
+    else:
+        # Generate Response through RAG & LLM
+        with st.spinner("Generating response..."):
+            bot_reply = query_data.query_rag(message)  # This might take time
 
     # For Keeping Chat History 
     st.session_state.chat_history.append(("BOT:", bot_reply))
@@ -101,9 +119,22 @@ for sender, message in st.session_state.chat_history:
     else:
         st.markdown(f"*🤖 BOT:* {message}")
 
+# AWS Operations Toggle
+st.session_state.aws_mode = st.checkbox(
+    "🔧 AWS Operations Mode", 
+    value=st.session_state.aws_mode,
+    help="Enable to perform AWS operations using natural language"
+)
+
+if st.session_state.aws_mode:
+    st.info("💡 **AWS Mode Active:** Ask me to perform AWS operations like 'list my DynamoDB tables' or 'show EC2 instances'")
+else:
+    st.info("💡 **RAG Mode Active:** Ask questions about uploaded documents")
+
 # Input form
 with st.form(key="message_form", clear_on_submit=True):
-    user_input = st.text_area("Enter your message:", placeholder="Type your message...")
+    placeholder_text = "Ask about AWS operations..." if st.session_state.aws_mode else "Ask about uploaded documents..."
+    user_input = st.text_area("Enter your message:", placeholder=placeholder_text)
     submit_button = st.form_submit_button("Send")
     if submit_button and user_input:
         handle_message(user_input)
