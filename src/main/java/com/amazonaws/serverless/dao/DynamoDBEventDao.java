@@ -14,121 +14,112 @@
 
 package com.amazonaws.serverless.dao;
 
-
-import com.amazonaws.services.dynamodbv2.datamodeling.DynamoDBMapper;
-import com.amazonaws.services.dynamodbv2.datamodeling.DynamoDBQueryExpression;
-import com.amazonaws.services.dynamodbv2.datamodeling.DynamoDBScanExpression;
-import com.amazonaws.services.dynamodbv2.model.AttributeValue;
 import com.amazonaws.serverless.domain.Event;
 import com.amazonaws.serverless.manager.DynamoDBManager;
-import org.apache.log4j.Logger;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
+import software.amazon.awssdk.enhanced.dynamodb.Key;
+import software.amazon.awssdk.enhanced.dynamodb.model.QueryConditional;
+import software.amazon.awssdk.enhanced.dynamodb.model.QueryEnhancedRequest;
+import software.amazon.awssdk.enhanced.dynamodb.model.ScanEnhancedRequest;
 
 import java.util.*;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+import java.util.Comparator;
 
-
-public class DynamoDBEventDao implements EventDao {
-
-    private static final Logger log = Logger.getLogger(DynamoDBEventDao.class);
-
-    private static final DynamoDBMapper mapper = DynamoDBManager.mapper();
-
-    private static volatile DynamoDBEventDao instance;
-
-
-    private DynamoDBEventDao() { }
-
+public final class DynamoDBEventDao implements EventDao {
+    
+    private static final Logger log = LogManager.getLogger(DynamoDBEventDao.class);
+    
+    private static final class InstanceHolder {
+        private static final DynamoDBEventDao INSTANCE = new DynamoDBEventDao();
+    }
+    
+    private final DynamoDbTable<Event> eventTable;
+    
+    private DynamoDBEventDao() {
+        this.eventTable = DynamoDBManager.instance().eventTable();
+    }
+    
     public static DynamoDBEventDao instance() {
-
-        if (instance == null) {
-            synchronized(DynamoDBEventDao.class) {
-                if (instance == null)
-                    instance = new DynamoDBEventDao();
-            }
-        }
-        return instance;
+        return InstanceHolder.INSTANCE;
     }
 
     @Override
     public List<Event> findAllEvents() {
-        return mapper.scan(Event.class, new DynamoDBScanExpression());
+        return eventTable.scan(ScanEnhancedRequest.builder().build())
+                .items()
+                .stream()
+                .collect(Collectors.toList());
     }
 
     @Override
     public List<Event> findEventsByCity(String city) {
-
-        Map<String, AttributeValue> eav = new HashMap<>();
-        eav.put(":v1", new AttributeValue().withS(city));
-
-        DynamoDBQueryExpression<Event> query = new DynamoDBQueryExpression<Event>()
-                                                    .withIndexName(Event.CITY_INDEX)
-                                                    .withConsistentRead(false)
-                                                    .withKeyConditionExpression("city = :v1")
-                                                    .withExpressionAttributeValues(eav);
-
-        return mapper.query(Event.class, query);
-
-
-        // NOTE:  without an index, this query would require a full table scan with a filter:
-        /*
-         DynamoDBScanExpression scanExpression = new DynamoDBScanExpression()
-                                                    .withFilterExpression("city = :val1")
-                                                    .withExpressionAttributeValues(eav);
-
-         return mapper.scan(Event.class, scanExpression);
-        */
-
+        var queryRequest = QueryEnhancedRequest.builder()
+                .queryConditional(QueryConditional.keyEqualTo(Key.builder().partitionValue(city).build()))
+                .build();
+                
+        return eventTable.index(Event.CITY_INDEX)
+                .query(queryRequest)
+                .stream()
+                .flatMap(page -> page.items().stream())
+                .collect(Collectors.toList());
     }
 
     @Override
     public List<Event> findEventsByTeam(String team) {
-
-        DynamoDBQueryExpression<Event> homeQuery = new DynamoDBQueryExpression<>();
-        Event eventKey = new Event();
-        eventKey.setHomeTeam(team);
-        homeQuery.setHashKeyValues(eventKey);
-        List<Event> homeEvents = mapper.query(Event.class, homeQuery);
-
-        Map<String, AttributeValue> eav = new HashMap<>();
-        eav.put(":v1", new AttributeValue().withS(team));
-        DynamoDBQueryExpression<Event> awayQuery = new DynamoDBQueryExpression<Event>()
-                                                        .withIndexName(Event.AWAY_TEAM_INDEX)
-                                                        .withConsistentRead(false)
-                                                        .withKeyConditionExpression("awayTeam = :v1")
-                                                        .withExpressionAttributeValues(eav);
-
-        List<Event> awayEvents = mapper.query(Event.class, awayQuery);
-
-        // need to create a new list because PaginatedList from query is immutable
-        List<Event> allEvents = new LinkedList<>();
-        allEvents.addAll(homeEvents);
-        allEvents.addAll(awayEvents);
-        allEvents.sort( (e1, e2) -> e1.getEventDate() <= e2.getEventDate() ? -1 : 1 );
-
-        return allEvents;
+        // Query for home team events
+        var homeQuery = QueryEnhancedRequest.builder()
+                .queryConditional(QueryConditional.keyEqualTo(Key.builder().partitionValue(team).build()))
+                .build();
+        
+        var homeEvents = eventTable.query(homeQuery)
+                .stream()
+                .flatMap(page -> page.items().stream())
+                .toList();
+        
+        // Query for away team events
+        var awayQuery = QueryEnhancedRequest.builder()
+                .queryConditional(QueryConditional.keyEqualTo(Key.builder().partitionValue(team).build()))
+                .build();
+        
+        var awayEvents = eventTable.index(Event.AWAY_TEAM_INDEX)
+                .query(awayQuery)
+                .stream()
+                .flatMap(page -> page.items().stream())
+                .toList();
+        
+        return Stream.concat(homeEvents.stream(), awayEvents.stream())
+                .sorted(Comparator.comparing(Event::getEventDate))
+                .collect(Collectors.toList());
     }
 
     @Override
     public Optional<Event> findEventByTeamAndDate(String team, Long eventDate) {
-
-        Event event = mapper.load(Event.class, team, eventDate);
-
-        return Optional.ofNullable(event);
+        var key = Key.builder()
+                .partitionValue(team)
+                .sortValue(eventDate)
+                .build();
+        
+        return Optional.ofNullable(eventTable.getItem(key));
     }
 
     @Override
     public void saveOrUpdateEvent(Event event) {
-
-        mapper.save(event);
+        eventTable.putItem(event);
     }
 
     @Override
     public void deleteEvent(String team, Long eventDate) {
-
-        Optional<Event> oEvent = findEventByTeamAndDate(team, eventDate);
-        if (oEvent.isPresent()) {
-            mapper.delete(oEvent.get());
-        }
-        else {
+        var key = Key.builder()
+                .partitionValue(team)
+                .sortValue(eventDate)
+                .build();
+        
+        var deletedEvent = eventTable.deleteItem(key);
+        if (deletedEvent == null) {
             log.error("Could not delete event, no such team and date combination");
             throw new IllegalArgumentException("Delete failed for nonexistent event");
         }

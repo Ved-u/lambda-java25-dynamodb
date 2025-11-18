@@ -15,22 +15,18 @@
 package com.amazonaws.serverless.pojo;
 
 /**
- *
- * This simple POJO is for use with Amazon API Gateway so the
- * Lambda functions can receive JSON objects from API Gateway,
- * rather than simple Strings.
- *
+ * POJO for use with Amazon API Gateway so the
+ * Lambda functions can receive JSON objects from API Gateway.
  */
 public class City {
-
     private String cityName;
-
-    public String getCityName() {
-        return cityName;
-    }
-
-    public void setCityName(String cityName) {
+    
+    public City() {}
+    
+    public City(String cityName) {
         this.cityName = cityName;
     }
-
+    
+    public String getCityName() { return cityName; }
+    public void setCityName(String cityName) { this.cityName = cityName; }
 }

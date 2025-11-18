@@ -15,23 +15,18 @@
 package com.amazonaws.serverless.pojo;
 
 /**
- *
- * This simple POJO is for use with Amazon API Gateway so the
- * Lambda functions can receive JSON objects from API Gateway,
- * rather than simple Strings.
- *
+ * POJO for use with Amazon API Gateway so the
+ * Lambda functions can receive JSON objects from API Gateway.
  */
 public class Team {
-
     private String teamName;
-
-
-    public String getTeamName() {
-        return teamName;
-    }
-
-    public void setTeamName(String teamName) {
+    
+    public Team() {}
+    
+    public Team(String teamName) {
         this.teamName = teamName;
     }
-
+    
+    public String getTeamName() { return teamName; }
+    public void setTeamName(String teamName) { this.teamName = teamName; }
 }

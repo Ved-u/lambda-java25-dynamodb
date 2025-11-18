@@ -14,42 +14,50 @@
 
 package com.amazonaws.serverless.manager;
 
+import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
+import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
+import software.amazon.awssdk.enhanced.dynamodb.TableSchema;
+import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
+import com.amazonaws.serverless.domain.Event;
+import com.amazonaws.serverless.domain.Embedding;
 
-import com.amazonaws.regions.Region;
-import com.amazonaws.regions.Regions;
-import com.amazonaws.services.dynamodbv2.AmazonDynamoDBClient;
-import com.amazonaws.services.dynamodbv2.datamodeling.DynamoDBMapper;
-
-
-public class DynamoDBManager {
-
-    private static volatile DynamoDBManager instance;
-
-    private static DynamoDBMapper mapper;
-
+public final class DynamoDBManager {
+    
+    private static final class InstanceHolder {
+        private static final DynamoDBManager INSTANCE = new DynamoDBManager();
+    }
+    
+    private final DynamoDbEnhancedClient enhancedClient;
+    private final DynamoDbTable<Event> eventTable;
+    private final DynamoDbTable<Embedding> embeddingTable;
+    
     private DynamoDBManager() {
-
-        AmazonDynamoDBClient client = new AmazonDynamoDBClient();
-        client.setRegion(Region.getRegion(Regions.US_EAST_1));
-        mapper = new DynamoDBMapper(client);
+        var dynamoDbClient = DynamoDbClient.builder()
+                .region(Region.US_EAST_1)
+                .build();
+        
+        this.enhancedClient = DynamoDbEnhancedClient.builder()
+                .dynamoDbClient(dynamoDbClient)
+                .build();
+                
+        this.eventTable = enhancedClient.table(Event.TABLE_NAME, TableSchema.fromBean(Event.class));
+        this.embeddingTable = enhancedClient.table(Embedding.TABLE_NAME, TableSchema.fromBean(Embedding.class));
     }
-
+    
     public static DynamoDBManager instance() {
-
-        if (instance == null) {
-            synchronized(DynamoDBManager.class) {
-                if (instance == null)
-                    instance = new DynamoDBManager();
-            }
-        }
-
-        return instance;
+        return InstanceHolder.INSTANCE;
     }
-
-    public static DynamoDBMapper mapper() {
-
-        DynamoDBManager manager = instance();
-        return manager.mapper;
+    
+    public DynamoDbEnhancedClient enhancedClient() {
+        return enhancedClient;
     }
-
+    
+    public DynamoDbTable<Event> eventTable() {
+        return eventTable;
+    }
+    
+    public DynamoDbTable<Embedding> embeddingTable() {
+        return embeddingTable;
+    }
 }
