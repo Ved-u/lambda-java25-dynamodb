@@ -1,0 +1,11 @@
+# Start DynamoDB Local
+scripts/start_local_db.bat
+
+# Create tables
+python scripts/create_tables.py
+
+# Check embeddings
+python scripts/check_embeddings.py
+
+# Run UI
+cd UI && streamlit run UI.py

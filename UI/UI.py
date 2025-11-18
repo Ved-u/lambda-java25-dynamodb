@@ -10,7 +10,7 @@ from RAG import populate_database
 import Send_Email
 
 # Global Variable for path to data folder for storing PDFs
-PATH = r"C:\Vedant\CS\Projects\GAP\GAP\AIHackathon\UI\data"
+PATH = r"C:\Users\vedan\OneDrive\Desktop\Hackathon\lambda-java25-dynamodb\UI\data"
 
 # ---------------------- Session State ----------------------
 if "chat_history" not in st.session_state:
@@ -34,12 +34,12 @@ def handle_message(message: str):
         bot_reply = query_data.query_rag(message)  # This might take time
 
     # For Keeping Chat History 
-    st.session_state.chat_history.append(("UniSoft:", bot_reply))
+    st.session_state.chat_history.append(("BOT:", bot_reply))
    
 
 # ---------------------- Streamlit UI ----------------------
 st.set_page_config(layout="wide")
-st.title("📑 UniSoft - Contract Chatbot")
+st.title("📑 BOT - Contract Chatbot")
 
 # Sidebar
 with st.sidebar:
@@ -97,9 +97,9 @@ with st.sidebar:
 st.subheader("💬 Conversation")
 for sender, message in st.session_state.chat_history:
     if sender == "user":
-        st.markdown(f"👤 You: *{message}*")
+        st.markdown(f"**👤 You:**  **{message}**")
     else:
-        st.markdown(f"*🤖 UniSoft:* {message}")
+        st.markdown(f"*🤖 BOT:* {message}")
 
 # Input form
 with st.form(key="message_form", clear_on_submit=True):
